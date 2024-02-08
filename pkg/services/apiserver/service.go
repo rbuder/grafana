@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"path"
 
 	"github.com/grafana/dskit/services"
@@ -29,6 +28,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/apiserver/aggregator"
 	"github.com/grafana/grafana/pkg/services/apiserver/auth/authorizer"
 	"github.com/grafana/grafana/pkg/services/apiserver/builder"
+	apiserverTransport "github.com/grafana/grafana/pkg/services/apiserver/endpoints/responsewriter"
 	grafanaapiserveroptions "github.com/grafana/grafana/pkg/services/apiserver/options"
 	entitystorage "github.com/grafana/grafana/pkg/services/apiserver/storage/entity"
 	filestorage "github.com/grafana/grafana/pkg/services/apiserver/storage/file"
@@ -344,10 +344,10 @@ func (s *service) startCoreServer(
 ) (*genericapiserver.GenericAPIServer, error) {
 	// setup the loopback transport and signal that it's ready
 	transport.fn = func(req *http.Request) (*http.Response, error) {
-		w := newWrappedResponseWriter()
+		w := apiserverTransport.NewAdapter(req.Context())
 		resp := responsewriter.WrapForHTTP1Or2(w)
 		server.Handler.ServeHTTP(resp, req)
-		return w.Result(), nil
+		return w.Response(), nil
 	}
 	close(transport.ready)
 
@@ -377,10 +377,11 @@ func (s *service) startAggregator(
 
 	// setup the loopback transport for the aggregator server and signal that it's ready
 	transport.fn = func(req *http.Request) (*http.Response, error) {
-		w := newWrappedResponseWriter()
+		w := apiserverTransport.NewAdapter(req.Context())
 		resp := responsewriter.WrapForHTTP1Or2(w)
-		aggregatorServer.GenericAPIServer.Handler.ServeHTTP(resp, req)
-		return w.Result(), nil
+		defer aggregatorServer.GenericAPIServer.Handler.ServeHTTP(resp, req)
+		r := w.Response()
+		return r, nil
 	}
 	close(transport.ready)
 
@@ -401,9 +402,9 @@ func (s *service) GetDirectRestConfig(c *contextmodel.ReqContext) *clientrest.Co
 		Transport: &roundTripperFunc{
 			fn: func(req *http.Request) (*http.Response, error) {
 				ctx := appcontext.WithUser(req.Context(), c.SignedInUser)
-				w := httptest.NewRecorder()
+				w := apiserverTransport.NewAdapter(ctx)
 				s.handler.ServeHTTP(w, req.WithContext(ctx))
-				return w.Result(), nil
+				return w.Response(), nil
 			},
 		},
 	}
@@ -442,25 +443,4 @@ func (f *roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) 
 		<-f.ready
 	}
 	return f.fn(req)
-}
-
-var _ http.ResponseWriter = (*wrappedResponseWriter)(nil)
-var _ responsewriter.UserProvidedDecorator = (*wrappedResponseWriter)(nil)
-
-type wrappedResponseWriter struct {
-	*httptest.ResponseRecorder
-}
-
-func newWrappedResponseWriter() *wrappedResponseWriter {
-	w := httptest.NewRecorder()
-	return &wrappedResponseWriter{w}
-}
-
-func (w *wrappedResponseWriter) Unwrap() http.ResponseWriter {
-	return w.ResponseRecorder
-}
-
-func (w *wrappedResponseWriter) CloseNotify() <-chan bool {
-	// TODO: this is probably not the right thing to do here
-	return make(<-chan bool)
 }
