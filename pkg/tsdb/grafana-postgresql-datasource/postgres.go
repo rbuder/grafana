@@ -10,13 +10,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	pgxstdlib "github.com/jackc/pgx/v5/stdlib"
+
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	sdkproxy "github.com/grafana/grafana-plugin-sdk-go/backend/proxy"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
-	"github.com/lib/pq"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/grafana/grafana/pkg/setting"
@@ -57,8 +60,8 @@ func (s *Service) QueryData(ctx context.Context, req *backend.QueryDataRequest) 
 	return dsInfo.QueryData(ctx, req)
 }
 
-func newPostgres(cfg *setting.Cfg, dsInfo sqleng.DataSourceInfo, cnnstr string, logger log.Logger, settings backend.DataSourceInstanceSettings) (*sql.DB, *sqleng.DataSourceHandler, error) {
-	connector, err := pq.NewConnector(cnnstr)
+func newPostgres(ctx context.Context, cfg *setting.Cfg, dsInfo sqleng.DataSourceInfo, cnnstr string, logger log.Logger, settings backend.DataSourceInstanceSettings) (*sql.DB, *sqleng.DataSourceHandler, error) {
+	pgxConf, err := pgx.ParseConfig(cnnstr)
 	if err != nil {
 		logger.Error("postgres connector creation failed", "error", err)
 		return nil, nil, fmt.Errorf("postgres connector creation failed")
@@ -67,13 +70,13 @@ func newPostgres(cfg *setting.Cfg, dsInfo sqleng.DataSourceInfo, cnnstr string, 
 	// use the proxy-dialer if the secure socks proxy is enabled
 	proxyOpts := proxyutil.GetSQLProxyOptions(cfg.SecureSocksDSProxy, dsInfo, settings.Name, settings.Type)
 	if sdkproxy.New(proxyOpts).SecureSocksProxyEnabled() {
-		dialer, err := newPostgresProxyDialer(proxyOpts)
+		dialFunc, err := newPgxDialFunc(proxyOpts)
 		if err != nil {
-			logger.Error("postgres proxy creation failed", "error", err)
-			return nil, nil, fmt.Errorf("postgres proxy creation failed")
+			logger.Error("socks-proxy creation failed", "error", err)
+			return nil, nil, fmt.Errorf("socks-proxy creation failed")
 		}
-		// update the postgres dialer with the proxy dialer
-		connector.Dialer(dialer)
+
+		pgxConf.DialFunc = dialFunc
 	}
 
 	config := sqleng.DataPluginConfiguration{
@@ -84,7 +87,8 @@ func newPostgres(cfg *setting.Cfg, dsInfo sqleng.DataSourceInfo, cnnstr string, 
 
 	queryResultTransformer := postgresQueryResultTransformer{}
 
-	db := sql.OpenDB(connector)
+	// db := sql.OpenDB(connector)
+	db := pgxstdlib.OpenDB(*pgxConf)
 
 	db.SetMaxOpenConns(config.DSInfo.JsonData.MaxOpenConns)
 	db.SetMaxIdleConns(config.DSInfo.JsonData.MaxIdleConns)
@@ -103,7 +107,7 @@ func newPostgres(cfg *setting.Cfg, dsInfo sqleng.DataSourceInfo, cnnstr string, 
 
 func (s *Service) newInstanceSettings(cfg *setting.Cfg) datasource.InstanceFactoryFunc {
 	logger := s.logger
-	return func(_ context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+	return func(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 		logger.Debug("Creating Postgres query endpoint")
 		jsonData := sqleng.JsonData{
 			MaxOpenConns:        cfg.SqlDatasourceMaxOpenConnsDefault,
@@ -140,7 +144,7 @@ func (s *Service) newInstanceSettings(cfg *setting.Cfg) datasource.InstanceFacto
 			return nil, err
 		}
 
-		_, handler, err := newPostgres(cfg, dsInfo, cnnstr, logger, settings)
+		_, handler, err := newPostgres(ctx, cfg, dsInfo, cnnstr, logger, settings)
 
 		if err != nil {
 			logger.Error("Failed connecting to Postgres", "err", err)
@@ -254,6 +258,44 @@ func (s *Service) CheckHealth(ctx context.Context, req *backend.CheckHealthReque
 
 func (t *postgresQueryResultTransformer) GetConverterList() []sqlutil.StringConverter {
 	return []sqlutil.StringConverter{
+		{
+			Name:           "handle TIME WITH TIME ZONE",
+			InputScanKind:  reflect.Interface,
+			InputTypeName:  strconv.Itoa(pgtype.TimetzOID),
+			ConversionFunc: func(in *string) (*string, error) { return in, nil },
+			Replacer: &sqlutil.StringFieldReplacer{
+				OutputFieldType: data.FieldTypeNullableTime,
+				ReplaceFunc: func(in *string) (any, error) {
+					if in == nil {
+						return nil, nil
+					}
+					v, err := time.Parse("15:04:05-07", *in)
+					if err != nil {
+						return nil, err
+					}
+					return &v, nil
+				},
+			},
+		},
+		{
+			Name:           "handle TIME",
+			InputScanKind:  reflect.Interface,
+			InputTypeName:  "TIME",
+			ConversionFunc: func(in *string) (*string, error) { return in, nil },
+			Replacer: &sqlutil.StringFieldReplacer{
+				OutputFieldType: data.FieldTypeNullableTime,
+				ReplaceFunc: func(in *string) (any, error) {
+					if in == nil {
+						return nil, nil
+					}
+					v, err := time.Parse("15:04:05", *in)
+					if err != nil {
+						return nil, err
+					}
+					return &v, nil
+				},
+			},
+		},
 		{
 			Name:           "handle FLOAT4",
 			InputScanKind:  reflect.Interface,

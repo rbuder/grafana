@@ -1,14 +1,14 @@
 package postgres
 
 import (
-	"database/sql"
 	"fmt"
 	"testing"
 
 	"github.com/grafana/grafana/pkg/setting"
 	"github.com/grafana/grafana/pkg/tsdb/sqleng"
 	"github.com/grafana/grafana/pkg/tsdb/sqleng/proxyutil"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
+	pgxstdlib "github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,18 +23,21 @@ func TestPostgresProxyDriver(t *testing.T) {
 		ServerName:   settings.ServerName,
 	}
 	opts := proxyutil.GetSQLProxyOptions(proxySettings, sqleng.DataSourceInfo{UID: "1", JsonData: sqleng.JsonData{SecureDSProxy: true}}, "pg", "postgres")
-	dbURL := "localhost:5432"
+	dbURL := "127.0.0.1:5432"
 	cnnstr := fmt.Sprintf("postgres://auser:password@%s/db?sslmode=disable", dbURL)
 
 	t.Run("Connector should use dialer context that routes through the socks proxy to db", func(t *testing.T) {
-		connector, err := pq.NewConnector(cnnstr)
+		pgxConf, err := pgx.ParseConfig(cnnstr)
+		// connector, err := pq.NewConnector(cnnstr)
 		require.NoError(t, err)
-		dialer, err := newPostgresProxyDialer(opts)
+		dialFunc, err := newPgxDialFunc(opts)
 		require.NoError(t, err)
 
-		connector.Dialer(dialer)
+		// connector.Dialer(dialer)
+		pgxConf.DialFunc = dialFunc
 
-		db := sql.OpenDB(connector)
+		db := pgxstdlib.OpenDB(*pgxConf)
+
 		err = db.Ping()
 
 		require.Contains(t, err.Error(), fmt.Sprintf("socks connect %s %s->%s", "tcp", settings.ProxyAddress, dbURL))
