@@ -372,10 +372,10 @@ func (s *service) startAggregator(
 	// setup the loopback transport for the aggregator server and signal that it's ready
 	transport.fn = func(req *http.Request) (*http.Response, error) {
 		w := apiserverTransport.NewAdapter(req.Context())
-		resp := responsewriter.WrapForHTTP1Or2(w)
+		//resp := responsewriter.WrapForHTTP1Or2(w)
 		go func() {
-			aggregatorServer.GenericAPIServer.Handler.ServeHTTP(resp, req)
-			w.Close()
+			aggregatorServer.GenericAPIServer.Handler.ServeHTTP(w, req)
+			w.CloseWriter()
 		}()
 		r := w.Response()
 		return r, nil

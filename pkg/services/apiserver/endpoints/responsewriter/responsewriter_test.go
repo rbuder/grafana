@@ -22,7 +22,7 @@ func TestResponseAdapter(t *testing.T) {
 				w := grafanaresponsewriter.NewAdapter(req.Context())
 				go func() {
 					fakeHandler(w, req)
-					w.Close()
+					w.CloseWriter()
 				}()
 				r := w.Response()
 				return r, nil

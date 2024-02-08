@@ -363,9 +363,7 @@ func (c *AvailableConditionController) processNextWorkItem() bool {
 func (c *AvailableConditionController) addAPIService(obj interface{}) {
 	castObj := obj.(*apiregistrationv1.APIService)
 	klog.V(4).Infof("Adding %s", castObj.Name)
-	if castObj.Spec.Service != nil {
-		c.rebuildAPIServiceCache()
-	}
+	c.rebuildAPIServiceCache()
 	c.queue.Add(castObj.Name)
 }
 
