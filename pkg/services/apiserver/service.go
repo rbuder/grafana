@@ -373,7 +373,10 @@ func (s *service) startAggregator(
 	transport.fn = func(req *http.Request) (*http.Response, error) {
 		w := apiserverTransport.NewAdapter(req.Context())
 		resp := responsewriter.WrapForHTTP1Or2(w)
-		defer aggregatorServer.GenericAPIServer.Handler.ServeHTTP(resp, req)
+		go func() {
+			aggregatorServer.GenericAPIServer.Handler.ServeHTTP(resp, req)
+			w.Close()
+		}()
 		r := w.Response()
 		return r, nil
 	}
