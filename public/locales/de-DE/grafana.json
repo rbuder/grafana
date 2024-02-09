@@ -1133,18 +1133,18 @@
     "delete-modal": {
       "revoke-nonorphaned-body-text": "Sind Sie sicher, dass Sie diese URL widerrufen möchten? Das Dashboard wird nicht mehr öffentlich sein.",
       "revoke-orphaned-body-text": "Das verwaiste öffentliche Dashboard wird nicht mehr öffentlich sein.",
-      "revoke-title": ""
+      "revoke-title": "Öffentliche URL widerrufen"
     },
     "email-sharing": {
-      "input-invalid-email-text": "",
-      "input-required-email-text": "",
-      "invite-button": "",
-      "invite-field-desc": "",
-      "invite-field-label": "",
-      "resend-button": "",
-      "resend-button-title": "",
-      "revoke-button": "",
-      "revoke-button-title": ""
+      "input-invalid-email-text": "Ungültige E-Mail",
+      "input-required-email-text": "E-Mail-Adresse ist erforderlich",
+      "invite-button": "Einladen",
+      "invite-field-desc": "Personen per E-Mail einladen",
+      "invite-field-label": "Einladen",
+      "resend-button": "Erneut senden",
+      "resend-button-title": "Erneut senden",
+      "revoke-button": "Widerrufen",
+      "revoke-button-title": "Widerrufen"
     },
     "modal-alerts": {
       "no-upsert-perm-alert-desc": "",
