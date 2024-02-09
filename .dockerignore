@@ -22,3 +22,4 @@ node_modules
 !.yarn/plugins
 !.yarn/versions
 !.yarn/cache
+.DS_Store
